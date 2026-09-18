@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kindle #99｜Build with Claude Code — Slides</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f172a;color:#e2e8f0;font-family:system-ui,sans-serif;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+#header{background:#1e293b;padding:8px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #334155;flex-shrink:0}
+#header-title{font-size:13px;font-weight:600;color:#e2e8f0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#header-counter{font-size:11px;color:#94a3b8;white-space:nowrap}
+#hint{font-size:10px;color:#64748b;white-space:nowrap}
+#main{display:flex;flex:1;overflow:hidden}
+/* ── Sidebar ── */
+#sidebar{width:240px;background:#1a2740;border-right:1px solid #1e293b;display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+#sidebar::-webkit-scrollbar{width:4px}
+#sidebar::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+.ch-btn{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:8px 12px;border:none;background:transparent;color:#94a3b8;font-size:0.75rem;text-align:left;cursor:pointer;width:100%;border-bottom:1px solid rgba(255,255,255,0.04);transition:background .15s,color .15s;white-space:normal;line-height:1.3}
+.ch-btn:hover{background:rgba(255,255,255,0.06);color:#e2e8f0}
+.ch-btn.active{background:#2e1e4f;color:#ede9fe;border-left:3px solid #a78bfa}
+.ch-badge{font-size:0.65rem;padding:1px 5px;border-radius:8px;background:rgba(255,255,255,0.1);color:#64748b;flex-shrink:0}
+.ch-btn.active .ch-badge{background:rgba(167,139,250,0.22);color:#c4b5fd}
+/* ── Right panel ── */
+#right{display:flex;flex-direction:column;flex:1;overflow:hidden}
+#viewer{flex:1;position:relative;overflow:hidden;cursor:grab;background:#0f172a}
+#viewer.dragging{cursor:grabbing}
+#img{position:absolute;transform-origin:0 0;user-select:none;pointer-events:none}
+#badge{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.6);color:#94a3b8;font-size:11px;padding:2px 7px;border-radius:4px;pointer-events:none}
+#nav{background:#1e293b;border-top:1px solid #334155;padding:7px 12px;display:flex;align-items:center;justify-content:center;gap:8px;flex-shrink:0}
+#nav button{background:#334155;border:none;color:#e2e8f0;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;transition:background .15s}
+#nav button:hover:not(:disabled){background:#475569}
+#nav button:disabled{opacity:.35;cursor:default}
+#page-info{font-size:12px;color:#94a3b8;min-width:80px;text-align:center}
+#speed-select,#mode-select{background:#334155;border:1px solid #475569;color:#e2e8f0;padding:3px 7px;border-radius:4px;font-size:12px;cursor:pointer}
+#speed-select:focus,#mode-select:focus{outline:none;border-color:#a78bfa}
+#btn-play{min-width:80px}
+#btn-play.playing{background:#7c3aed;color:#fff}
+#thumbs{background:#1e293b;border-top:1px solid #334155;padding:5px 8px;display:flex;gap:5px;overflow-x:auto;flex-shrink:0;max-height:80px}
+#thumbs::-webkit-scrollbar{height:4px}
+#thumbs::-webkit-scrollbar-track{background:#1e293b}
+#thumbs::-webkit-scrollbar-thumb{background:#475569;border-radius:2px}
+.thumb{width:58px;height:42px;object-fit:cover;border-radius:3px;border:2px solid transparent;cursor:pointer;flex-shrink:0;transition:border-color .15s}
+.thumb.active{border-color:#a78bfa}
+.thumb:hover{border-color:#64748b}
+</style>
+</head>
+<body>
+<div id="header">
+  <div id="header-title">Build with Claude Code（Kindle 99）</div>
+  <div id="header-counter">00 封面前言作者序 · 1/10</div>
+  <div id="hint">← → 換頁 · 滾輪縮放 · 拖曳平移 · 雙擊還原 · Space 播放/暫停</div>
+</div>
+<div id="main">
+  <div id="sidebar"></div>
+  <div id="right">
+    <div id="viewer">
+      <img id="img" src="" alt="">
+      <div id="badge">100%</div>
+    </div>
+    <div id="nav">
+      <button id="btn-prev">◄</button>
+      <div id="page-info">1 / 10</div>
+      <button id="btn-next">►</button>
+      <select id="speed-select">
+        <option value="5000">5 秒</option>
+        <option value="10000" selected>10 秒</option>
+        <option value="15000">15 秒</option>
+        <option value="20000">20 秒</option>
+        <option value="30000">30 秒</option>
+      </select>
+      <select id="mode-select" title="自動播放範圍">
+        <option value="chapter" selected>本章循環</option>
+        <option value="book">全書連播</option>
+      </select>
+      <button id="btn-play">▶ 自動播放</button>
+    </div>
+    <div id="thumbs"></div>
+  </div>
+</div>
+<script src="groups_data.js"></script>
+<script>
+var curGroup=0,curSlide=0,scale=1,tx=0,ty=0;
+var dragging=false,dragX=0,dragY=0;
+var autoInterval=null;
+
+var sidebar=document.getElementById("sidebar");
+var viewer=document.getElementById("viewer");
+var img=document.getElementById("img");
+var badge=document.getElementById("badge");
+var headerCounter=document.getElementById("header-counter");
+var pageInfo=document.getElementById("page-info");
+var btnPrev=document.getElementById("btn-prev");
+var btnNext=document.getElementById("btn-next");
+var thumbsEl=document.getElementById("thumbs");
+var btnPlay=document.getElementById("btn-play");
+var speedSelect=document.getElementById("speed-select");
+var modeSelect=document.getElementById("mode-select");
+
+// Build sidebar
+GROUPS.forEach(function(g,i){
+  var btn=document.createElement("button");
+  btn.className="ch-btn"+(i===0?" active":"");
+  btn.innerHTML="<span>"+g.label+"</span><span class=\"ch-badge\">"+g.images.length+"</span>";
+  btn.onclick=(function(idx){return function(){switchGroup(idx);};})(i);
+  sidebar.appendChild(btn);
+});
+
+function applyTransform(){
+  img.style.transform="matrix("+scale+",0,0,"+scale+","+tx+","+ty+")";
+  badge.textContent=Math.round(scale*100)+"%";
+}
+function fitImage(){
+  var PAD=20;
+  scale=Math.min((viewer.clientWidth-PAD*2)/img.naturalWidth,(viewer.clientHeight-PAD*2)/img.naturalHeight);
+  tx=(viewer.clientWidth-img.naturalWidth*scale)/2;
+  ty=(viewer.clientHeight-img.naturalHeight*scale)/2;
+  applyTransform();
+}
+
+function loadSlide(gIdx,sIdx){
+  curGroup=gIdx;curSlide=sIdx;
+  var group=GROUPS[gIdx];
+  img.onload=function(){fitImage();};
+  img.src=group.images[sIdx].file;
+  headerCounter.textContent=group.label.substring(0,12)+" · "+(sIdx+1)+"/"+group.images.length;
+  pageInfo.textContent=(sIdx+1)+" / "+group.images.length;
+  btnPrev.disabled=(gIdx===0&&sIdx===0);
+  btnNext.disabled=(gIdx===GROUPS.length-1&&sIdx===group.images.length-1);
+  var thumbs=document.querySelectorAll(".thumb");
+  for(var i=0;i<thumbs.length;i++) thumbs[i].classList.toggle("active",i===sIdx);
+  var at=thumbsEl.children[sIdx];
+  if(at) at.scrollIntoView({block:"nearest",inline:"nearest"});
+}
+
+function switchGroup(gIdx){
+  curGroup=gIdx;
+  var btns=document.querySelectorAll(".ch-btn");
+  for(var i=0;i<btns.length;i++) btns[i].classList.toggle("active",i===gIdx);
+  thumbsEl.innerHTML="";
+  var group=GROUPS[gIdx];
+  group.images.forEach(function(im,i){
+    var t=document.createElement("img");
+    t.className="thumb"+(i===0?" active":"");
+    t.src=im.file; t.title=im.label;
+    t.onclick=(function(idx){return function(){loadSlide(gIdx,idx);};})(i);
+    thumbsEl.appendChild(t);
+  });
+  loadSlide(gIdx,0);
+}
+
+// Init
+switchGroup(0);
+
+// Keyboard nav
+document.addEventListener("keydown",function(e){
+  var group=GROUPS[curGroup];
+  if(e.key==="ArrowLeft"||e.key==="ArrowRight"){
+    e.preventDefault();
+    if(e.key==="ArrowLeft"){
+      if(curSlide>0) loadSlide(curGroup,curSlide-1);
+      else if(curGroup>0){switchGroup(curGroup-1);loadSlide(curGroup,GROUPS[curGroup].images.length-1);}
+    } else {
+      if(curSlide<group.images.length-1) loadSlide(curGroup,curSlide+1);
+      else if(curGroup<GROUPS.length-1) switchGroup(curGroup+1);
+    }
+  } else if(e.key===" "){e.preventDefault();btnPlay.click();}
+});
+
+btnPrev.onclick=function(){
+  if(curSlide>0) loadSlide(curGroup,curSlide-1);
+  else if(curGroup>0){var pg=curGroup-1;switchGroup(pg);loadSlide(pg,GROUPS[pg].images.length-1);}
+};
+btnNext.onclick=function(){
+  var group=GROUPS[curGroup];
+  if(curSlide<group.images.length-1) loadSlide(curGroup,curSlide+1);
+  else if(curGroup<GROUPS.length-1) switchGroup(curGroup+1);
+};
+
+// Zoom
+viewer.addEventListener("wheel",function(e){
+  e.preventDefault();
+  var f=e.deltaY<0?1.13:1/1.13;
+  var ns=Math.min(Math.max(scale*f,0.1),25);
+  var vr=viewer.getBoundingClientRect();
+  var cx=e.clientX-vr.left,cy=e.clientY-vr.top;
+  tx=cx-(cx-tx)*(ns/scale);
+  ty=cy-(cy-ty)*(ns/scale);
+  scale=ns; applyTransform();
+},{passive:false});
+
+viewer.addEventListener("mousedown",function(e){dragging=true;dragX=e.clientX-tx;dragY=e.clientY-ty;viewer.classList.add("dragging");});
+document.addEventListener("mousemove",function(e){if(!dragging)return;tx=e.clientX-dragX;ty=e.clientY-dragY;applyTransform();});
+document.addEventListener("mouseup",function(){dragging=false;viewer.classList.remove("dragging");});
+viewer.addEventListener("dblclick",function(){scale=1;tx=0;ty=0;fitImage();});
+
+// Autoplay — 兩種模式：
+//   chapter（本章循環）：到當前章最後一頁回該章第一頁
+//   book（全書連播）：末頁接下一章首頁，全書播完回到第一章（重複播放）
+function autoNext(){
+  var group=GROUPS[curGroup];
+  if(curSlide<group.images.length-1){loadSlide(curGroup,curSlide+1);}
+  else if(modeSelect.value==="book"){switchGroup((curGroup+1)%GROUPS.length);}
+  else{loadSlide(curGroup,0);}
+}
+function stopAuto(){
+  clearInterval(autoInterval);autoInterval=null;
+  btnPlay.textContent="▶ 自動播放";btnPlay.classList.remove("playing");
+}
+btnPlay.onclick=function(){
+  if(autoInterval){stopAuto();}
+  else{
+    autoInterval=setInterval(autoNext,parseInt(speedSelect.value));
+    btnPlay.textContent="⏸ 暫停";btnPlay.classList.add("playing");
+  }
+};
+speedSelect.addEventListener("change",function(){
+  if(autoInterval){clearInterval(autoInterval);autoInterval=setInterval(autoNext,parseInt(speedSelect.value));}
+});
+window.addEventListener("resize",function(){fitImage();});
+</script>
+</body>
+</html>
